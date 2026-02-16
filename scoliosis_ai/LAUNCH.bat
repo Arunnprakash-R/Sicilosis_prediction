@@ -65,13 +65,13 @@ if not exist "venv\Scripts\python.exe" (
     echo.
 )
 
-REM Launch the enhanced GUI application
+REM Launch the simplified GUI application
 echo ========================================
-echo   Launching Scoliosis AI Enhanced GUI
+echo   Launching Scoliosis AI Diagnosis
 echo ========================================
 echo.
 
-venv\Scripts\python.exe launcher.py
+venv\Scripts\python.exe launcher_simple.py
 
 if errorlevel 1 (
     echo.
