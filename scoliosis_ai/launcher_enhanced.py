@@ -442,7 +442,7 @@ class ScoliosisAIEnhanced:
         tk.Label(model_frame, text="Select Model:", font=("Arial", 10, "bold")).pack(anchor=tk.W, pady=5)
         ttk.Combobox(model_frame, textvariable=self.eval_model_var, 
                     values=["best.pt", "last.pt", "epoch0.pt"], 
-                    state="readonly", width=40, font=("Arial", 10)).pack(pady=5)
+                    state="readonly", width=40, font=("Arial", 10")).pack(pady=5)
         
         # Quick evaluation
         quick_frame = ttk.LabelFrame(parent, text="Quick Evaluation", padding="20")
@@ -877,7 +877,7 @@ Version: 3.0 Enhanced with Data Science
             else:
                 self.dataset_info.config(text="❌ Dataset YAML not found!")
                 messagebox.showerror("Error", "Dataset YAML file not found!\n\nPlease select the data.yaml file.")
-                return
+                 return
         
         self.dataset_info.config(text="Validating dataset...")
         self.status_var.set("Analyzing dataset...")
