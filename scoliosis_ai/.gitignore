@@ -1,0 +1,113 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Model weights and checkpoints (large files)
+*.pt
+*.pth
+*.onnx
+*.pb
+*.h5
+*.caffemodel
+*.weights
+
+# Datasets (large files)
+data/raw/
+data/processed/
+*.jpg
+*.png
+*.jpeg
+*.dcm
+*.nii
+*.nii.gz
+
+# Outputs
+outputs/*
+!outputs/.gitkeep
+logs/*
+!logs/.gitkeep
+
+# TensorBoard
+runs/
+logs/tensorboard/
+
+# Weights & Biases
+wandb/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.cache
+
+# Compiled files
+*.pyc
+*.pyo
+
+# Distribution
+*.tar.gz
+*.zip
+
+# IDE-specific
+.vscode/settings.json
+.idea/workspace.xml
+
+# Model directories (keep structure, ignore contents)
+models/detection/*
+!models/detection/.gitkeep
+models/segmentation/*
+!models/segmentation/.gitkeep
+models/vit/*
+!models/vit/.gitkeep
+models/quantum/*
+!models/quantum/.gitkeep
+models/cobb/*
+!models/cobb/.gitkeep
+models/report/*
+!models/report/.gitkeep
+
+# Keep important documentation
+!README.md
+!QUICKSTART.md
+!COMMANDS.txt
+!LICENSE
