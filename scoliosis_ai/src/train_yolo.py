@@ -35,6 +35,7 @@ class YOLOTrainer:
         self.logger.info("YOLOv8 Trainer initialized")
         self.logger.info(f"Model: {self.config['model_name']}")
         self.logger.info(f"Epochs: {self.config['epochs']}")
+        self.logger.info(f"Max training time (hours): {self.config.get('max_training_hours', 1.0)}")
         self.logger.info(f"Batch size: {self.config['batch_size']}")
     
     def train(self, data_yaml=None, resume=False):
@@ -53,14 +54,21 @@ class YOLOTrainer:
         
         self.logger.info(f"Training with data config: {data_yaml}")
         
-        # Load pre-trained YOLOv8 model
-        model = YOLO(self.config['model_name'])
+        checkpoint_path = self.config['save_dir'] / 'scoliosis_yolo_enhanced' / 'weights' / 'last.pt'
+        if resume and checkpoint_path.exists():
+            model = YOLO(str(checkpoint_path))
+            self.logger.info(f"Resuming from checkpoint: {checkpoint_path}")
+        else:
+            model = YOLO(self.config['model_name'])
+            if resume:
+                self.logger.warning(f"Resume requested but checkpoint not found at {checkpoint_path}. Starting fresh.")
         
         # Training arguments with advanced features
         train_args = {
             # Basic training
             'data': data_yaml,
             'epochs': self.config['epochs'],
+            'time': self.config.get('max_training_hours', 1.0),
             'batch': self.config['batch_size'],
             'imgsz': self.config['img_size'],
             'patience': self.config['patience'],
@@ -258,6 +266,7 @@ def main():
     parser = argparse.ArgumentParser(description='Train YOLOv8 for Scoliosis Detection')
     parser.add_argument('--data', type=str, default=None, help='Path to data.yaml')
     parser.add_argument('--epochs', type=int, default=100, help='Number of epochs')
+    parser.add_argument('--time-hours', type=float, default=1.0, help='Maximum training time in hours')
     parser.add_argument('--batch-size', type=int, default=16, help='Batch size')
     parser.add_argument('--imgsz', type=int, default=640, help='Image size')
     parser.add_argument('--resume', action='store_true', help='Resume training')
@@ -273,6 +282,8 @@ def main():
         config['batch_size'] = args.batch_size
     if args.imgsz:
         config['img_size'] = args.imgsz
+    if args.time_hours:
+        config['max_training_hours'] = args.time_hours
     
     # Initialize trainer
     trainer = YOLOTrainer(config)

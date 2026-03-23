@@ -1,0 +1,14 @@
+train:
+  - C:/Users/ARUNN/Downloads/Dataset/archive (1)/scoliosis.v1-new-version-1.yolov5pytorch/train/images
+  - C:/Users/ARUNN/Downloads/Dataset/archive (2)/scoliosis.v1-new-version-1.yolov5pytorch/train/images
+
+val:
+  - C:/Users/ARUNN/Downloads/Dataset/archive (1)/scoliosis.v1-new-version-1.yolov5pytorch/valid/images
+  - C:/Users/ARUNN/Downloads/Dataset/archive (2)/scoliosis.v1-new-version-1.yolov5pytorch/valid/images
+
+test:
+  - C:/Users/ARUNN/Downloads/Dataset/archive (1)/scoliosis.v1-new-version-1.yolov5pytorch/test/images
+  - C:/Users/ARUNN/Downloads/Dataset/archive (2)/scoliosis.v1-new-version-1.yolov5pytorch/test/images
+
+nc: 4
+names: ['1-derece', '2-derece', '3-derece', 'saglikli']

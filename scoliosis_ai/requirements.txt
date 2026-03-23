@@ -6,6 +6,7 @@ ultralytics>=8.0.0
 # Vision Transformers
 transformers>=4.30.0
 timm>=0.9.0
+sentencepiece>=0.2.0
 
 # Quantum Computing
 pennylane>=0.30.0

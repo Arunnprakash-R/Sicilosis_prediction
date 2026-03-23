@@ -22,6 +22,7 @@ from tqdm import tqdm
 sys.path.append(str(Path(__file__).parent))
 from src.config import YOLO_CONFIG, VIT_CONFIG, QUANTUM_CONFIG
 from src.utils import setup_logging, set_seed
+from src.models_config import ModelConfig
 
 # Optional imports (fail gracefully if models not trained)
 try:
@@ -78,10 +79,24 @@ class ScoliosisInference:
         self.yolo_model = self._load_yolo(yolo_model_path)
         self.vit_model = self._load_vit(vit_model_path) if ensemble else None
         self.quantum_model = self._load_quantum(quantum_model_path) if ensemble else None
+        if ensemble and not (self.vit_model or self.quantum_model):
+            self.logger.warning("Ensemble requested but no extra models available. Using YOLO only.")
         
         self.logger.info("Inference pipeline initialized")
         self.logger.info(f"Ensemble mode: {ensemble}")
         self.logger.info(f"Device: {device}")
+
+    def _resolve_class_info(self, class_id: int) -> Tuple[str, str]:
+        """Resolve class label and severity safely for any class id."""
+        if 0 <= class_id < len(self.classes):
+            class_name = self.classes[class_id]
+            return class_name, self.severity_map.get(class_name, "Unknown")
+
+        self.logger.warning(
+            f"Predicted class_id={class_id} is outside configured scoliosis classes. "
+            "This usually indicates non-scoliosis YOLO weights."
+        )
+        return "unknown", "Unknown (non-scoliosis class)"
     
     def _load_yolo(self, model_path):
         """Load YOLO model"""
@@ -171,16 +186,18 @@ class ScoliosisInference:
         # Estimate Cobb angle based on class
         cobb_angle = self._estimate_cobb_angle(pred_class, confidence)
         
+        class_name, severity = self._resolve_class_info(pred_class)
+
         prediction = {
             'image_path': image_path,
             'image_id': Path(image_path).stem,
-            'class': self.classes[pred_class],
+            'class': class_name,
             'class_id': int(pred_class),
             'confidence': confidence,
             'cobb_angle_primary': cobb_angle,
             'cobb_angle_secondary': cobb_angle * 0.6,  # Estimate secondary
             'bbox': bbox,
-            'severity': self.severity_map[self.classes[pred_class]]
+            'severity': severity
         }
         
         # Ensemble if enabled
@@ -231,17 +248,19 @@ class ScoliosisInference:
             # Estimate Cobb angle based on class
             cobb_angle = self._estimate_cobb_angle(pred_class, confidence)
             
+            class_name, severity = self._resolve_class_info(pred_class)
+
             prediction = {
                 'image_path': image_path,
                 'image_id': Path(image_path).stem,
                 'detection_id': idx + 1,  # 1-indexed for display
-                'class': self.classes[pred_class],
+                'class': class_name,
                 'class_id': int(pred_class),
                 'confidence': confidence,
                 'cobb_angle_primary': cobb_angle,
                 'cobb_angle_secondary': cobb_angle * 0.6,
                 'bbox': bbox,
-                'severity': self.severity_map[self.classes[pred_class]]
+                'severity': severity
             }
             
             predictions.append(prediction)
@@ -271,9 +290,14 @@ class ScoliosisInference:
     
     def _ensemble_prediction(self, yolo_pred: Dict, image_path: str) -> Dict:
         """Ensemble predictions from multiple models"""
+        if not (self.vit_model or self.quantum_model):
+            yolo_pred['ensemble_confidence'] = yolo_pred['confidence']
+            yolo_pred['ensemble_note'] = 'single_model'
+            return yolo_pred
+
         # TODO: Implement actual ensemble when other models are trained
-        # For now, just adjust confidence based on YOLO
         yolo_pred['ensemble_confidence'] = yolo_pred['confidence']
+        yolo_pred['ensemble_note'] = 'placeholder'
         return yolo_pred
     
     def _get_fallback_prediction(self, image_path: str) -> Dict:
@@ -336,8 +360,23 @@ class ScoliosisInference:
     
     def _save_visualization(self, prediction: Dict, viz_dir: str):
         """Save prediction visualization"""
-        # Visualization would be implemented here
-        pass
+        image_path = prediction.get('image_path')
+        if not image_path:
+            return
+
+        try:
+            img = Image.open(image_path).convert('RGB')
+            draw = ImageDraw.Draw(img)
+            bbox = prediction.get('bbox', [])
+            if len(bbox) == 4:
+                x1, y1, x2, y2 = [int(v) for v in bbox]
+                draw.rectangle([x1, y1, x2, y2], outline=(255, 0, 0), width=3)
+            out_dir = Path(viz_dir)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out_path = out_dir / f"{Path(image_path).stem}_viz.jpg"
+            img.save(out_path, quality=95)
+        except Exception as e:
+            self.logger.error(f"Failed to save visualization for {image_path}: {e}")
     
     def save_submission(self, 
                        predictions: List[Dict],

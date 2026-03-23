@@ -223,12 +223,30 @@ class ScoliosisDataAnalyzer:
     def cobb_angle_statistics(self, angles_dict, save_path=None):
         """Analyze Cobb angle statistics and distribution"""
         angles = list(angles_dict.values())
+
+        if len(angles) == 0:
+            return {
+                'count': 0,
+                'mean': 0.0,
+                'median': 0.0,
+                'std': 0.0,
+                'min': 0.0,
+                'max': 0.0,
+                'q25': 0.0,
+                'q75': 0.0,
+                'severity_distribution': {
+                    'Normal (< 10°)': 0,
+                    'Mild (10-25°)': 0,
+                    'Moderate (25-40°)': 0,
+                    'Severe (≥ 40°)': 0
+                }
+            }
         
         stats_dict = {
             'count': len(angles),
             'mean': np.mean(angles),
             'median': np.median(angles),
-            'std': np.std(angles, ddof=1),
+            'std': np.std(angles, ddof=1) if len(angles) > 1 else 0.0,
             'min': np.min(angles),
             'max': np.max(angles),
             'q25': np.percentile(angles, 25),

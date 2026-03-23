@@ -1,174 +1,160 @@
-"""
-Clinical Report Generation using Gemma LLM
-Generates patient-ready diagnostic reports from scoliosis predictions
-"""
+"""Clinical report generation powered by Gemma 2B with safe fallback."""
 
-import os
-import sys
-import torch
-from pathlib import Path
-from transformers import AutoModelForCausalLM, AutoTokenizer
 from datetime import datetime
-import logging
+from pathlib import Path
+from typing import Dict, Any
 
-sys.path.append(str(Path(__file__).parent.parent))
-from src.config import GEMMA_CONFIG, REPORT_TEMPLATE
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+from src.config import GEMMA_CONFIG
 from src.utils import setup_logging
 
 
 class ReportGenerator:
-    """Generate clinical reports using Gemma LLM"""
-    
-    def __init__(self, config=None):
-        """Initialize report generator
-        
-        Args:
-            config: Dictionary with model configuration
-        """
+    """Generate clinical reports using a Gemma instruction-tuned model."""
+
+    def __init__(self, config: Dict[str, Any] = None):
         self.config = config or GEMMA_CONFIG
-        self.logger = setup_logging()
-        
-        self.logger.info(f"Loading Gemma model: {self.config['model_name']}")
-        
-        # Load tokenizer
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            self.config['model_name'],
-            trust_remote_code=True
+        self.logger = setup_logging('logs/report_generation.log')
+        self.model_name = self.config.get('model_name', 'google/gemma-2b-it')
+        self.device = self.config.get('device', 'cpu')
+
+        self.tokenizer = None
+        self.model = None
+        self.available = False
+
+        self._load_model()
+
+    def _load_model(self):
+        """Load tokenizer/model and keep system usable if loading fails."""
+        try:
+            self.logger.info(f"Loading report LLM: {self.model_name}")
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+
+            model_kwargs = {
+                'torch_dtype': torch.float32,
+                'trust_remote_code': True,
+            }
+
+            if self.device == 'cpu':
+                model_kwargs['device_map'] = 'cpu'
+
+            self.model = AutoModelForCausalLM.from_pretrained(self.model_name, **model_kwargs)
+
+            if self.tokenizer.pad_token_id is None and self.tokenizer.eos_token_id is not None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+
+            self.available = True
+            self.logger.info("Gemma report model loaded successfully")
+        except Exception as exc:
+            self.available = False
+            self.logger.warning(f"Gemma unavailable, using template report. Reason: {exc}")
+
+    @staticmethod
+    def _safe_float(value: Any, default: float = 0.0) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _clinical_recommendation(primary_cobb: float):
+        if primary_cobb < 10:
+            return (
+                "Normal spinal alignment.",
+                "Routine follow-up as clinically indicated.",
+                "LOW"
+            )
+        if primary_cobb < 25:
+            return (
+                "Mild scoliosis range.",
+                "Periodic follow-up and conservative management may be considered.",
+                "MODERATE"
+            )
+        if primary_cobb < 40:
+            return (
+                "Moderate scoliosis range.",
+                "Orthopedic consultation and bracing evaluation may be appropriate.",
+                "HIGH"
+            )
+        return (
+            "Severe scoliosis range.",
+            "Urgent specialist evaluation for advanced intervention is recommended.",
+            "CRITICAL"
         )
-        
-        # Load model with 8-bit quantization for CPU efficiency
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.config['model_name'],
-            device_map='cpu',
-            torch_dtype=torch.float32,  # CPU doesn't support bfloat16
-            load_in_8bit=self.config.get('load_in_8bit', False),
-            trust_remote_code=True
+
+    def _build_prompt(self, prediction: Dict[str, Any]) -> str:
+        image_id = prediction.get('image_id', 'unknown')
+        severity = prediction.get('severity', 'Unknown')
+        primary_cobb = self._safe_float(prediction.get('cobb_angle_primary', 0.0))
+        secondary_cobb = self._safe_float(prediction.get('cobb_angle_secondary', 0.0))
+        confidence = self._safe_float(prediction.get('confidence', 0.0)) * 100.0
+
+        return (
+            "You are an assistant writing a concise scoliosis imaging report for clinicians. "
+            "Do not provide diagnosis certainty claims. Keep it factual and brief.\n\n"
+            f"Image ID: {image_id}\n"
+            f"Severity label: {severity}\n"
+            f"Primary Cobb angle: {primary_cobb:.1f} degrees\n"
+            f"Secondary Cobb angle: {secondary_cobb:.1f} degrees\n"
+            f"Detection confidence: {confidence:.1f}%\n\n"
+            "Write 3 short sections with headings:\n"
+            "1) Findings\n"
+            "2) Interpretation\n"
+            "3) Suggested next step\n"
         )
-        
-        self.logger.info(f"Model loaded on {self.config['device']}")
-    
-    def generate_report(self, predictions):
-        """Generate clinical report from predictions
-        
-        Args:
-            predictions: Dictionary with prediction results
-                - image_id: str
-                - severity_class: str
-                - confidence: float
-                - primary_cobb: float
-                - secondary_cobb: float
-                - detections: list of detected vertebrae
-        
-        Returns:
-            Generated clinical report as string
-        """
-        # Create prompt for Gemma
-        prompt = self._create_prompt(predictions)
-        
-        self.logger.info("Generating clinical report...")
-        
-        # Generate report
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(self.config['device'])
-        
+
+    def _generate_llm_findings(self, prediction: Dict[str, Any]) -> str:
+        if not self.available:
+            return ""
+
+        prompt = self._build_prompt(prediction)
+        inputs = self.tokenizer(prompt, return_tensors='pt', truncation=True)
+
         with torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
-                max_length=self.config['max_length'],
-                temperature=self.config['temperature'],
-                top_p=self.config['top_p'],
+                max_new_tokens=int(self.config.get('max_length', 512)),
                 do_sample=True,
-                pad_token_id=self.tokenizer.eos_token_id
+                temperature=float(self.config.get('temperature', 0.7)),
+                top_p=float(self.config.get('top_p', 0.9)),
+                pad_token_id=self.tokenizer.pad_token_id,
+                eos_token_id=self.tokenizer.eos_token_id,
             )
-        
-        # Decode generated text
-        generated_text = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-        
-        # Extract report (remove prompt)
-        report = generated_text[len(prompt):].strip()
-        
-        # Format final report
-        final_report = self._format_report(predictions, report)
-        
-        return final_report
-    
-    def _create_prompt(self, predictions):
-        """Create prompt for LLM
-        
-        Args:
-            predictions: Prediction results dictionary
-        
-        Returns:
-            Formatted prompt string
-        """
-        severity_class = predictions.get('severity_class', 'Unknown')
-        primary_cobb = predictions.get('primary_cobb', 0)
-        secondary_cobb = predictions.get('secondary_cobb', 0)
-        confidence = predictions.get('confidence', 0)
-        
-        prompt = f"""You are a medical AI assistant specializing in spine radiology. 
-Generate a professional clinical report for the following scoliosis analysis:
 
-Patient X-ray Analysis Results:
-- Severity Classification: {severity_class}
-- Primary Cobb Angle: {primary_cobb:.1f} degrees
-- Secondary Cobb Angle: {secondary_cobb:.1f} degrees
-- Detection Confidence: {confidence:.1f}%
+        generated = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        if generated.startswith(prompt):
+            generated = generated[len(prompt):]
+        return generated.strip()
 
-Please provide:
-1. Clinical findings summary
-2. Interpretation of the measurements
-3. Severity assessment
-4. Recommended next steps
+    def generate_report(self, prediction: Dict[str, Any]) -> str:
+        """Generate a complete text report for one prediction."""
+        image_id = prediction.get('image_id', 'Unknown')
+        severity = prediction.get('severity', 'Unknown')
+        primary_cobb = self._safe_float(prediction.get('cobb_angle_primary', 0.0))
+        secondary_cobb = self._safe_float(prediction.get('cobb_angle_secondary', 0.0))
+        confidence = self._safe_float(prediction.get('confidence', 0.0)) * 100.0
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-Keep the report professional, concise, and clinically relevant.
+        interpretation, recommendation, risk_level = self._clinical_recommendation(primary_cobb)
+        llm_section = self._generate_llm_findings(prediction)
 
-Clinical Report:
-"""
-        return prompt
-    
-    def _format_report(self, predictions, generated_text):
-        """Format final clinical report
-        
-        Args:
-            predictions: Prediction results
-            generated_text: LLM generated text
-        
-        Returns:
-            Formatted report string
-        """
-        # Extract values
-        image_id = predictions.get('image_id', 'Unknown')
-        severity_class = predictions.get('severity_class', 'Unknown')
-        primary_cobb = predictions.get('primary_cobb', 0)
-        secondary_cobb = predictions.get('secondary_cobb', 0)
-        confidence = predictions.get('confidence', 0)
-        
-        # Get current date
-        current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Determine severity interpretation
-        if primary_cobb < 10:
-            interpretation = "Normal spine alignment with no significant scoliosis."
-            recommendation = "No treatment required. Routine follow-up recommended."
-        elif 10 <= primary_cobb < 25:
-            interpretation = "Mild scoliosis detected. Patient should be monitored."
-            recommendation = "Observation with periodic X-rays every 6 months. Physical therapy may be beneficial."
-        elif 25 <= primary_cobb < 40:
-            interpretation = "Moderate scoliosis present. Active intervention may be needed."
-            recommendation = "Consider bracing if patient is skeletally immature. Consultation with orthopedic specialist recommended."
-        else:
-            interpretation = "Severe scoliosis detected. Surgical evaluation indicated."
-            recommendation = "Refer to spine surgeon for evaluation. Discuss surgical options including spinal fusion."
-        
-        # Build report
-        report = f"""
+        if not llm_section:
+            llm_section = (
+                f"Findings: Detected curvature pattern is consistent with {severity}.\n"
+                f"Interpretation: Primary Cobb angle is {primary_cobb:.1f}°.\n"
+                f"Suggested next step: {recommendation}"
+            )
+
+        return f"""
 {'='*80}
 SPINE X-RAY AUTOMATED ANALYSIS REPORT
 {'='*80}
 
 Patient Information:
   Image ID: {image_id}
-  Analysis Date: {current_date}
+  Analysis Date: {timestamp}
   Analysis Type: Automated Scoliosis Detection
 
 {'='*80}
@@ -177,111 +163,30 @@ MEASUREMENTS:
 
   Primary Cobb Angle:      {primary_cobb:6.1f}°
   Secondary Cobb Angle:    {secondary_cobb:6.1f}°
-  Severity Classification: {severity_class}
+  Severity Classification: {severity}
   Detection Confidence:    {confidence:6.1f}%
+  Risk Level:              {risk_level}
 
 {'='*80}
-FINDINGS:
+CLINICAL SUMMARY:
 {'='*80}
 
-{generated_text if generated_text else 'Automated analysis completed successfully.'}
+{llm_section}
 
 {'='*80}
-INTERPRETATION:
+RULE-BASED REFERENCE:
 {'='*80}
 
-{interpretation}
-
-{'='*80}
-RECOMMENDATIONS:
-{'='*80}
-
-{recommendation}
+Interpretation: {interpretation}
+Recommendation: {recommendation}
 
 {'='*80}
 DISCLAIMER:
 {'='*80}
 
-This report is generated by an AI-powered automated analysis system (Scoliosis AI v1.0).
-All findings and measurements should be reviewed and validated by a qualified radiologist
-or orthopedic specialist before clinical decision-making.
-
-This automated analysis is intended to assist medical professionals and should not replace
-professional medical judgment.
+This report is AI-assisted and must be reviewed by a qualified clinician.
+It is not a standalone medical diagnosis.
 
 {'='*80}
 """
-        return report
-    
-    def save_report(self, report, output_path):
-        """Save report to file
-        
-        Args:
-            report: Report text
-            output_path: Path to save report
-        """
-        os.makedirs(os.path.dirname(output_path), exist_ok=True)
-        
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(report)
-        
-        self.logger.info(f"Report saved to: {output_path}")
-    
-    def generate_simplified_report(self, predictions):
-        """Generate simplified report without LLM (fallback method)
-        
-        Args:
-            predictions: Prediction results dictionary
-        
-        Returns:
-            Simplified clinical report
-        """
-        self.logger.info("Generating simplified report (no LLM)...")
-        
-        # Use template-based generation
-        report = self._format_report(predictions, "")
-        
-        return report
 
-
-def main():
-    """Test report generation"""
-    # Example predictions
-    predictions = {
-        'image_id': 'patient_001_spine_xray.jpg',
-        'severity_class': 'Moderate Scoliosis (25-40°)',
-        'primary_cobb': 32.5,
-        'secondary_cobb': 18.3,
-        'confidence': 94.2,
-        'detections': [
-            {'class': '2-derece', 'confidence': 0.95},
-            {'class': '2-derece', 'confidence': 0.93}
-        ]
-    }
-    
-    # Initialize generator
-    try:
-        generator = ReportGenerator()
-        
-        # Generate report
-        report = generator.generate_report(predictions)
-        
-        print(report)
-        
-        # Save report
-        output_path = Path('outputs/sample_report.txt')
-        generator.save_report(report, output_path)
-        
-    except Exception as e:
-        print(f"Error loading Gemma model: {e}")
-        print("Generating simplified report instead...")
-        
-        # Fallback to simplified report
-        generator = ReportGenerator.__new__(ReportGenerator)
-        generator.logger = setup_logging()
-        report = generator.generate_simplified_report(predictions)
-        print(report)
-
-
-if __name__ == "__main__":
-    main()

@@ -19,42 +19,44 @@ DATASET_CONFIG = {
     "yaml_path": r"C:\Users\ARUNN\Downloads\Dataset\archive (1)\scoliosis.v1-new-version-1.yolov5pytorch\data.yaml",
     "classes": ['1-derece', '2-derece', '3-derece', 'saglikli'],
     "num_classes": 4,
-    "img_size": 640,
+    "img_size": 416,  # Reduced for 2x faster training
 }
 
 # YOLOv8 Detection Configuration - 1 HOUR FAST MODE ⚡
 YOLO_CONFIG = {
-    "model_name": "yolov8s.pt",  # SMALL model for speed (11.2M params)
+    "model_name": "yolov8n.pt",  # NANO model for max speed (3.2M params)
     "epochs": 30,  # Optimized for 1-hour training
-    "batch_size": 16,  # Increased for faster training
-    "img_size": 640,  # Standard size for speed/accuracy balance
+    "max_training_hours": 1.0,  # Hard stop: training ends after 1 hour
+    "batch_size": 8,  # Optimized for CPU training
+    "img_size": 416,  # Reduced for 2x faster training
+    "workers": 4,  # Parallel data loading
     "patience": 50,  # More patience for better training
     "optimizer": "AdamW",  # Better optimizer than SGD for accuracy
     "lr0": 0.001,  # Lower LR for stable convergence (vs 0.01)
     "lrf": 0.01,  # Final LR = 0.001 * 0.01 = 0.00001
     "momentum": 0.937,
     "weight_decay": 0.0005,
-    "warmup_epochs": 5.0,  # More warmup for stability
+    "warmup_epochs": 3.0,  # Reduced warmup for faster start
     "warmup_momentum": 0.8,
     "warmup_bias_lr": 0.1,
     "conf_threshold": 0.25,
     "iou_threshold": 0.45,
-    # ADVANCED augmentation for accuracy
+    # LIGHTWEIGHT augmentation for speed
     "hsv_h": 0.015,  # Color augmentation
-    "hsv_s": 0.7,
+    "hsv_s": 0.5,  # Reduced
     "hsv_v": 0.4,
-    "degrees": 5.0,  # Small rotation for robustness
+    "degrees": 3.0,  # Minimal rotation
     "translate": 0.1,  # Translation
-    "scale": 0.5,  # Scale variation
-    "shear": 2.0,  # Shear augmentation
-    "perspective": 0.0001,  # Perspective transform
+    "scale": 0.3,  # Reduced scale
+    "shear": 0.0,  # Disabled for speed
+    "perspective": 0.0,  # Disabled for speed
     "flipud": 0.0,  # No vertical flip (spines don't flip vertically)
     "fliplr": 0.5,  # Horizontal flip (left/right is valid)
-    "mosaic": 1.0,  # Full mosaic augmentation
-    "mixup": 0.15,  # Mixup for better generalization
-    "copy_paste": 0.1,  # Copy-paste augmentation
-    "auto_augment": "randaugment",  # Automatic augmentation policy
-    "erasing": 0.4,  # Random erasing
+    "mosaic": 0.0,  # DISABLED - heavy augmentation
+    "mixup": 0.0,  # DISABLED - heavy augmentation
+    "copy_paste": 0.0,  # DISABLED - heavy augmentation
+    "auto_augment": None,  # DISABLED - heavy augmentation
+    "erasing": 0.0,  # DISABLED for speed
     # Advanced training techniques
     "multi_scale": False,  # Multi-scale training disabled (causing issues)
     "rect": False,  # Rectangular training (set True if images have similar AR)
@@ -146,8 +148,9 @@ METRICS_CONFIG = {
 VIZ_CONFIG = {
     "plot_predictions": True,
     "save_plots": True,
-    "dpi": 150,
-    "font_size": 10,
+    "dpi": 200,
+    "font_size": 8,
+    "font_family": "Segoe UI",
 }
 
 # Logging Configuration

@@ -5,6 +5,8 @@ Fine-tunes pretrained ViT for direct Cobb angle prediction
 
 import os
 import sys
+import json
+import csv
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
@@ -255,6 +257,38 @@ class ViTTrainer:
         
         self.logger.info("Training completed!")
         return history
+
+
+def load_labels(labels_path: str) -> dict:
+    """Load labels from CSV or JSON.
+
+    CSV expected columns: image_id (or id) and cobb_angle (or angle).
+    JSON expected mapping: {"image_id": angle, ...}
+    """
+    labels_path = Path(labels_path)
+    if not labels_path.exists():
+        raise FileNotFoundError(f"Labels file not found: {labels_path}")
+
+    if labels_path.suffix.lower() in {".json"}:
+        with open(labels_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return {str(k): float(v) for k, v in data.items()}
+        raise ValueError("JSON labels must be a dict of image_id -> angle")
+
+    if labels_path.suffix.lower() in {".csv"}:
+        labels = {}
+        with open(labels_path, "r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                image_id = row.get("image_id") or row.get("id") or row.get("image")
+                angle = row.get("cobb_angle") or row.get("angle") or row.get("label")
+                if image_id is None or angle is None:
+                    continue
+                labels[str(image_id)] = float(angle)
+        return labels
+
+    raise ValueError("Unsupported labels format. Use CSV or JSON.")
     
     def _train_epoch(self, model, loader, criterion, optimizer):
         """Train for one epoch"""
@@ -363,9 +397,8 @@ def main():
     
     args = parser.parse_args()
     
-    # Load labels (implement based on your label format)
-    # labels_dict = load_labels(args.labels)
-    labels_dict = {}  # Placeholder
+    # Load labels from CSV/JSON
+    labels_dict = load_labels(args.labels)
     
     # Initialize trainer
     trainer = ViTTrainer()

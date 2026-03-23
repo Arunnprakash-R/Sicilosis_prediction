@@ -102,11 +102,83 @@ class AttentionUNet(nn.Module):
     Paper: "Attention U-Net: Learning Where to Look for the Pancreas"
     """
     
-    def __init__(self, in_channels: int = 1, out_channels: int = 1):
+    def __init__(self, in_channels: int = 1, out_channels: int = 1, features: list = [64, 128, 256, 512]):
         super().__init__()
-        # TODO: Implement attention gates for PhD-level contribution
-        # This focuses the model on spine regions
-        pass
+        self.encoder_blocks = nn.ModuleList()
+        self.decoder_blocks = nn.ModuleList()
+        self.attention_gates = nn.ModuleList()
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        # Encoder
+        for feature in features:
+            self.encoder_blocks.append(DoubleConv(in_channels, feature))
+            in_channels = feature
+
+        # Bottleneck
+        self.bottleneck = DoubleConv(features[-1], features[-1] * 2)
+
+        # Decoder + attention gates
+        for feature in reversed(features):
+            self.decoder_blocks.append(
+                nn.ConvTranspose2d(feature * 2, feature, kernel_size=2, stride=2)
+            )
+            self.attention_gates.append(AttentionGate(gate_channels=feature, skip_channels=feature))
+            self.decoder_blocks.append(DoubleConv(feature * 2, feature))
+
+        self.final_conv = nn.Conv2d(features[0], out_channels, kernel_size=1)
+
+    def forward(self, x):
+        skip_connections = []
+
+        for encoder in self.encoder_blocks:
+            x = encoder(x)
+            skip_connections.append(x)
+            x = self.pool(x)
+
+        x = self.bottleneck(x)
+
+        skip_connections = skip_connections[::-1]
+        gate_idx = 0
+
+        for idx in range(0, len(self.decoder_blocks), 2):
+            x = self.decoder_blocks[idx](x)
+            skip = skip_connections[idx // 2]
+
+            if x.shape != skip.shape:
+                x = F.interpolate(x, size=skip.shape[2:], mode='bilinear', align_corners=True)
+
+            skip = self.attention_gates[gate_idx](x, skip)
+            gate_idx += 1
+
+            x = torch.cat([skip, x], dim=1)
+            x = self.decoder_blocks[idx + 1](x)
+
+        return torch.sigmoid(self.final_conv(x))
+
+
+class AttentionGate(nn.Module):
+    """Attention gate for skip connections."""
+
+    def __init__(self, gate_channels: int, skip_channels: int, inter_channels: Optional[int] = None):
+        super().__init__()
+        if inter_channels is None:
+            inter_channels = max(1, skip_channels // 2)
+
+        self.theta = nn.Conv2d(skip_channels, inter_channels, kernel_size=1, stride=1, padding=0)
+        self.phi = nn.Conv2d(gate_channels, inter_channels, kernel_size=1, stride=1, padding=0)
+        self.psi = nn.Conv2d(inter_channels, 1, kernel_size=1, stride=1, padding=0)
+        self.relu = nn.ReLU(inplace=True)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, g, x):
+        g1 = self.phi(g)
+        x1 = self.theta(x)
+        if g1.shape != x1.shape:
+            g1 = F.interpolate(g1, size=x1.shape[2:], mode='bilinear', align_corners=True)
+
+        psi = self.relu(g1 + x1)
+        psi = self.sigmoid(self.psi(psi))
+        return x * psi
 
 
 class SegmentationLoss(nn.Module):

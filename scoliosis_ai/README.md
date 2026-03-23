@@ -14,20 +14,18 @@ Detect spine curvature, measure Cobb angles, classify severity, and generate cli
 
 ### Option 1: GUI Application (Recommended)
 ```bash
-double-click START.bat
-Select option 3: Launch GUI
+double-click LAUNCH.bat
 ```
 
 ### Option 2: Command Line Diagnosis
 ```bash
-double-click RUN_DIAGNOSIS.bat
-Drag your X-ray image when prompted
+python diagnose.py --image "path/to/xray.jpg" --model all
 ```
 
 ### Option 3: First Time Setup
 ```bash
-double-click START.bat
-Select option 1: Install dependencies
+double-click LAUNCH.bat
+First run auto-installs dependencies
 ```
 
 ---
@@ -84,7 +82,20 @@ pip install -r requirements.txt
 
 ### Launch GUI
 ```bash
-.\venv\Scripts\python.exe launcher.py
+.\venv\Scripts\python.exe launcher_simple.py
+```
+
+### Data Science Analysis (Python)
+```bash
+.\venv\Scripts\python.exe run_data_science.py
+```
+
+### Research Toolkit (Competition/PhD)
+```bash
+.\venv\Scripts\python.exe scripts\reproducibility_pack.py
+.\venv\Scripts\python.exe scripts\benchmark_suite.py
+.\venv\Scripts\python.exe scripts\explainability_heatmap.py --image "path\to\xray.jpg" --summary "outputs\diagnosis\image_summary.json"
+.\venv\Scripts\python.exe scripts\run_research_pipeline.py
 ```
 
 ### Using the GUI
@@ -100,14 +111,14 @@ pip install -r requirements.txt
 
 ```
 scoliosis_ai/
-├── START.bat                    ← Launch menu
-├── RUN_DIAGNOSIS.bat           ← Quick diagnosis
-├── INSTALL_SIMPLE.bat          ← Setup dependencies
-├── LAUNCH_GUI_FIXED.bat        ← Launch GUI
+├── LAUNCH.bat                  ← Launch GUI (default)
 │
 ├── diagnose.py                  ← Main diagnosis script
-├── launcher.py                  ← GUI application
+├── launcher.py                  ← Full GUI (advanced)
+├── launcher_simple.py           ← Simplified GUI (default)
 ├── inference.py                 ← Model inference
+├── run_data_science.py          ← Data science analysis runner
+├── scripts/                     ← Research toolkit scripts
 │
 ├── src/
 │   ├── config.py               ← Configuration
@@ -316,7 +327,7 @@ python main.py --image path/to/xray.jpg --output outputs/result.jpg
 #### 1. Train YOLOv8 Detection Model
 
 ```bash
-python src/train_yolo.py --data data/data.yaml --epochs 100 --imgsz 640
+python src/train_yolo.py --data data/data.yaml --epochs 100 --imgsz 640 --time-hours 1
 ```
 
 #### 2. Train Vision Transformer
@@ -379,7 +390,7 @@ python src/generate_report.py --results outputs/predictions.json --output output
 - **GPU**: Optional (CPU-only mode fully supported)
 
 ### Training Time (CPU Estimates)
-- YOLOv8: ~12-18 hours (100 epochs)
+- YOLOv8: ~1 hour (hard-capped using `--time-hours 1`)
 - ViT Fine-tuning: ~8-12 hours (50 epochs)
 - Quantum Model: ~4-6 hours (30 epochs)
 
@@ -402,7 +413,7 @@ Solution: System is configured for CPU-only. This is expected behavior.
 **Issue 2**: Out of memory during training
 ```
 Solution: Reduce batch size in training scripts
-python src/train_yolo.py --batch-size 8
+python src/train_yolo.py --batch-size 8 --time-hours 1
 ```
 
 **Issue 3**: Slow training speed
@@ -440,4 +451,4 @@ Contributions welcome! Please open an issue or submit a pull request.
 
 ## 📧 Contact
 
-For questions or support, contact: your.email@example.com
+For questions or support, contact: arunnprakashsrivai@gmail.com
